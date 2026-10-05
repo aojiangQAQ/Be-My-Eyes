@@ -1,0 +1,52 @@
+name: Publish to Modrinth
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Published GitHub release tag, for example v0.1.4"
+        required: true
+        type: string
+      dry_run:
+        description: "Validate the release without uploading"
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: modrinth-be-my-eyes
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.repository == 'aojiangQAQ/Be-My-Eyes' &&
+      (github.event_name != 'release' || !github.event.release.prerelease)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the publishing scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Test the publishing checks
+        run: python -m unittest discover -s .github/scripts -p "test_*.py" -v
+
+      - name: Sync the release to Modrinth
+        run: python .github/scripts/publish_modrinth.py --publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
