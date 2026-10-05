@@ -1,0 +1,19 @@
+Be My Eyes 0.1.4
+Author: aojiangQAQ（鳌江）
+
+- Rename the mod to Be My Eyes and add /bemyeyes.
+- Keep /duosight and existing save/config identifiers compatible.
+- Synchronize shared experience and container-specific screen state.
+- Preserve carried items when resetting input during role changes or menus.
+- Keep anvil rename text when returning from a personal menu.
+- Synchronize map previews and incremental map updates.
+- Use Simplified Chinese for Chinese language settings and English otherwise.
+- Allow both roles to use native chat, history, and command completion.
+- Preserve shared containers when closing chat and keep the driver's world hidden.
+
+0.1.3
+- Show the driver countdown.
+- Add interval and immediate swap commands.
+
+0.1.2
+- Fix the shared cursor above recipe books and tooltips.

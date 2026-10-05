@@ -1,0 +1,14 @@
+modLoader="javafml"
+loaderVersion="[52,)"
+license="All Rights Reserved"
+[[mods]]
+modId="duosight_smoke"
+version="0.1.0"
+displayName="Be My Eyes Tests"
+authors="aojiangQAQ（鳌江）"
+[[dependencies.duosight_smoke]]
+modId="duosight"
+mandatory=true
+versionRange="[0.1.0,)"
+ordering="AFTER"
+side="CLIENT"

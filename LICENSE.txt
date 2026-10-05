@@ -1,0 +1,6 @@
+Be My Eyes
+Copyright (c) 2026 aojiangQAQ（鳌江）
+All Rights Reserved.
+
+Third-party components retain their original licenses.
+The Forge license is included in licenses/Forge-LICENSE.txt.

@@ -1,0 +1,6 @@
+* text=auto eol=lf
+gradlew text eol=lf
+*.bat text eol=crlf
+*.jar binary
+src/generated/**/.cache/cache text eol=lf
+src/generated/**/*.json text eol=lf

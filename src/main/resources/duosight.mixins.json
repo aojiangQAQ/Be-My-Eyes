@@ -1,0 +1,32 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "dev.duosight.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "MenuAccess",
+    "PlayerListAccess",
+    "HorseMenuAccess"
+  ],
+  "client": [
+    "KeyboardHandlerMixin",
+    "KeyboardHandlerAccess",
+    "MouseHandlerMixin",
+    "MouseHandlerAccess",
+    "GameRendererMixin",
+    "CameraMixin",
+    "InputConstantsMixin",
+    "MinecraftMixin",
+    "RecipeBookMixin",
+    "RecipePageAccess",
+    "AnvilScreenMixin",
+    "StonecutterScreenMixin",
+    "LoomScreenMixin",
+    "BeaconScreenMixin",
+    "EditBoxAccess",
+    "ContainerScreenMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

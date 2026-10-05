@@ -1,0 +1,22 @@
+{
+  "duosight.unavailable": "That player is already paired, or you selected yourself.",
+  "duosight.invited": "Invitation sent to %s.",
+  "duosight.invitation": "%s invited you to share a body. Stand nearby and use /bemyeyes accept. Their body and inventory become the shared body.",
+  "duosight.no_invite": "No active invitation. Ask your partner to invite you again.",
+  "duosight.start_conditions": "Both players must be unpaired, alive, on foot, in Survival, and within 32 blocks in the same dimension.",
+  "duosight.started": "Be My Eyes started. Roles swap every two minutes by default. F8 ends the session.",
+  "duosight.stopped": "Session stopped. Your normal controls have been restored.",
+  "duosight.ended": "Session ended.",
+  "duosight.disconnected": "Session ended because a partner disconnected.",
+  "duosight.died": "Session ended because the shared body died.",
+  "duosight.inactive": "You are not sharing a body.",
+  "duosight.status": "Sharing a body. Swap interval: %s seconds. Next swap in %s seconds.",
+  "duosight.interval_set": "Swap interval set to %s seconds. Countdown restarted for this session only.",
+  "duosight.swapped": "Roles swapped immediately. Countdown restarted.",
+  "duosight.swap_loading": "The shared body is changing dimensions. Wait until loading finishes.",
+  "duosight.driver": "Driver",
+  "duosight.observer": "Eyes",
+  "duosight.loading": "Loading shared body",
+  "duosight.paused": "Partner in menu",
+  "duosight.vitals": "HP %s  |  Food %s  |  Lv %s"
+}

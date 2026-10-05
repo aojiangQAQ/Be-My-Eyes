@@ -1,0 +1,25 @@
+modLoader="javafml"
+loaderVersion="[52,)"
+license="All Rights Reserved"
+[[mods]]
+modId="duosight"
+version="0.1.4"
+displayName="Be My Eyes"
+authors="aojiangQAQ（鳌江）"
+description='''
+Two players share one body. You move, your partner sees. Then switch.
+'''
+
+[[dependencies.duosight]]
+modId="forge"
+mandatory=true
+versionRange="[52.1.16,53)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.duosight]]
+modId="minecraft"
+mandatory=true
+versionRange="[1.21.1,1.21.2)"
+ordering="NONE"
+side="BOTH"

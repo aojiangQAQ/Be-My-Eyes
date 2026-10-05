@@ -1,0 +1,22 @@
+{
+  "duosight.unavailable": "对方已经绑定，或者你选择了自己。",
+  "duosight.invited": "已向 %s 发出邀请。",
+  "duosight.invitation": "%s 邀请你共用身体。走到对方附近，输入 /bemyeyes accept 接受。对方的身体和背包将成为共同身体。",
+  "duosight.no_invite": "没有有效邀请，请让朋友重新邀请。",
+  "duosight.start_conditions": "双方必须尚未绑定、存活、未乘坐载具、处于生存模式，并在同一维度的 32 格范围内。",
+  "duosight.started": "共用身体已开始，默认每两分钟换位。按 F8 可以结束。",
+  "duosight.stopped": "共用身体已结束，恢复正常操作。",
+  "duosight.ended": "共用身体已结束。",
+  "duosight.disconnected": "队友离线，共用身体已结束。",
+  "duosight.died": "共同身体死亡，共用身体已结束。",
+  "duosight.inactive": "你当前没有共用身体。",
+  "duosight.status": "共用身体进行中，换位间隔 %s 秒，距离换位还有 %s 秒。",
+  "duosight.interval_set": "换位间隔已设为 %s 秒，倒计时重新开始，仅对当前绑定生效。",
+  "duosight.swapped": "已立即交换职责，倒计时重新开始。",
+  "duosight.swap_loading": "共同身体正在切换维度，请加载完成后再换位。",
+  "duosight.driver": "操作者",
+  "duosight.observer": "眼睛",
+  "duosight.loading": "正在加载共同身体",
+  "duosight.paused": "队友正在菜单中",
+  "duosight.vitals": "生命 %s  |  饥饿 %s  |  等级 %s"
+}

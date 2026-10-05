@@ -1,0 +1,106 @@
+plugins {
+    id 'java'
+    id 'idea'
+    id 'eclipse'
+    id 'net.minecraftforge.gradle' version '7.0.23'
+}
+
+version = '0.1.4'
+group = 'dev.duosight'
+base.archivesName = 'be-my-eyes-1.21.1'
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+java.withSourcesJar()
+
+def networkRole = providers.gradleProperty('networkSmoke').orNull
+def smokeRunDirectory = networkRole == null ? 'run' : "run-network-${networkRole}"
+
+sourceSets {
+    smoke {
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+    }
+}
+configurations.smokeImplementation.extendsFrom(configurations.implementation)
+
+minecraft {
+    mappings channel: 'official', version: '1.21.1'
+    runs {
+        configureEach {
+            workingDir = layout.projectDirectory.dir('run')
+            args '--mixin.config=duosight.mixins.json'
+            systemProperty 'forge.enabledGameTestNamespaces', 'duosight'
+        }
+        register('client')
+        register('server') {
+            args '--nogui'
+        }
+        register('gameTestServer')
+    }
+    if (networkRole != null) {
+        runs.named('client') {
+            workingDir = layout.projectDirectory.dir(smokeRunDirectory)
+            args '--username', networkRole == 'host' ? 'DuoHost' : 'DuoGuest',
+                    '--uuid', networkRole == 'host'
+                    ? '00000000-0000-0000-0000-000000000001'
+                    : '00000000-0000-0000-0000-000000000002',
+                    '--width', '640', '--height', '360'
+            systemProperty 'duosight.networkSmoke', networkRole
+            if (providers.gradleProperty('cursorSmoke').isPresent()) {
+                systemProperty 'duosight.cursorSmoke', 'true'
+            }
+            if (providers.gradleProperty('commandSmoke').isPresent()) {
+                systemProperty 'duosight.commandSmoke', 'true'
+            }
+            if (providers.gradleProperty('containerSmoke').isPresent()) {
+                systemProperty 'duosight.containerSmoke', 'true'
+                systemProperty 'duosight.containerStart', providers.gradleProperty('containerStart').getOrElse('0')
+            }
+        }
+    }
+}
+
+repositories {
+    minecraft.mavenizer(it)
+    maven fg.forgeMaven
+    maven fg.minecraftLibsMaven
+    mavenCentral()
+}
+
+dependencies {
+    implementation minecraft.dependency('net.minecraftforge:forge:1.21.1-52.1.16')
+    annotationProcessor 'org.spongepowered:mixin:0.8.7:processor'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.4'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+tasks.named('jar', Jar) {
+    manifest.attributes('MixinConfigs': 'duosight.mixins.json')
+}
+
+tasks.named('test', Test) {
+    useJUnitPlatform()
+}
+
+tasks.register('smokeJar', Jar) {
+    from sourceSets.smoke.output
+    archiveFileName = 'duosight-visual-smoke.jar'
+    destinationDirectory = layout.projectDirectory.dir("${smokeRunDirectory}/mods")
+}
+
+tasks.register('removeSmokeJar', Delete) {
+    delete layout.projectDirectory.file("${smokeRunDirectory}/mods/duosight-visual-smoke.jar")
+}
+
+if (providers.gradleProperty('visualSmoke').isPresent() || networkRole != null) {
+    tasks.configureEach {
+        if (name == 'runClient') {
+            dependsOn 'smokeJar'
+            finalizedBy 'removeSmokeJar'
+        }
+    }
+}
