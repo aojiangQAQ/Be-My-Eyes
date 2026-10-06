@@ -178,6 +178,24 @@ class PublisherTests(unittest.TestCase):
             publisher.publish("v0.1.4", dry_run=False)
         self.assertEqual(request.call_count, 3)
 
+    def test_reports_project_review_status_without_uploading_in_dry_run(self):
+        responses = [
+            make_release(),
+            {"id": "AABBCCDD", "slug": "be-my-eyes", "title": "Be My Eyes", "status": "processing"},
+            [],
+        ]
+        output = io.StringIO()
+        with (
+            patch.dict("os.environ", {"MODRINTH_TOKEN": "test-placeholder"}, clear=True),
+            patch.object(publisher, "request_json", side_effect=responses) as request,
+            patch.object(publisher, "download_asset", return_value=make_jar()),
+            patch("sys.stdout", output),
+        ):
+            publisher.publish("v0.1.4", dry_run=True)
+        self.assertIn("Modrinth project status: processing.", output.getvalue())
+        self.assertEqual(request.call_count, 3)
+        self.assertTrue(all(len(call.args) <= 2 for call in request.call_args_list))
+
     def test_new_version_uploads_release_notes_and_correct_metadata(self):
         data = make_jar()
         responses = [

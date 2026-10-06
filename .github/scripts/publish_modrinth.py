@@ -187,6 +187,7 @@ def publish(tag, dry_run):
     project_id = project.get("id", "")
     if not re.fullmatch(r"[A-Za-z0-9]{8}", project_id):
         raise PublishError("Modrinth returned an invalid project ID.")
+    print(f"Modrinth project status: {project.get('status', 'unknown')}.")
     versions = request_json(f"https://api.modrinth.com/v2/project/{project_id}/version", token)
     if already_published(versions, version, asset["name"], data):
         print(f"Version {version} already contains this exact JAR; skipped without changes.")
