@@ -13,7 +13,7 @@ public final class LanguageSmoke {
         var english = ClientLanguage.loadFrom(mc.getResourceManager(), List.of("en_us"), false);
         var chinese = ClientLanguage.loadFrom(mc.getResourceManager(), List.of("en_us", "zh_cn"), false);
         var keys = english.getLanguageData().keySet().stream().filter(key -> key.startsWith("duosight.")).toList();
-        check(keys.size() == 20, "complete base translations");
+        check(keys.size() >= 45, "complete base and control-book translations");
         try {
             for (String code : List.of("zh_cn", "zh_tw", "zh_hk", "en_us", "ja_jp", "fr_fr", "de_de")) {
                 var language = ClientLanguage.loadFrom(mc.getResourceManager(), List.of("en_us", code), false);

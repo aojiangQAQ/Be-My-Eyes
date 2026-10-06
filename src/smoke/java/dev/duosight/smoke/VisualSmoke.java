@@ -125,8 +125,13 @@ public final class VisualSmoke {
         image.writeToFile(directory.resolve(name));
     }
 
-    static void checkDriverFrame(Minecraft mc, NativeImage image) {
+    static void checkDriverFrame(Minecraft mc, NativeImage image) throws Exception {
         double scale = image.getHeight() / (double) mc.getWindow().getGuiScaledHeight();
+        var field = DuoClient.class.getDeclaredField("guideHintTicks");
+        field.setAccessible(true);
+        boolean hint = field.getInt(null) > 0 && mc.screen == null;
+        int hintWidth = mc.font.width(Component.translatable("duosight.book.shortcut_hint",
+                Component.keybind("key.duosight.guide")));
         int visible = 0;
         for (int y = 0; y < image.getHeight(); y++) {
             for (int x = 0; x < image.getWidth(); x++) {
@@ -136,7 +141,8 @@ public final class VisualSmoke {
                     if (rgb != 0) {
                         visible++;
                     }
-                } else {
+                } else if (!(hint && y >= 23 * scale && y < 34 * scale
+                        && Math.abs(x - image.getWidth() / 2.0) <= (hintWidth / 2.0 + 2) * scale)) {
                     check(rgb == 0, "world hidden outside countdown at " + x + "," + y);
                 }
             }

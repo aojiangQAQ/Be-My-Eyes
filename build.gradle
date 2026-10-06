@@ -5,7 +5,7 @@ plugins {
     id 'net.minecraftforge.gradle' version '7.0.23'
 }
 
-version = '0.1.4'
+version = '0.1.6'
 group = 'dev.duosight'
 base.archivesName = 'be-my-eyes-1.21.1'
 
@@ -51,6 +51,9 @@ minecraft {
             }
             if (providers.gradleProperty('commandSmoke').isPresent()) {
                 systemProperty 'duosight.commandSmoke', 'true'
+            }
+            if (providers.gradleProperty('guideSmoke').isPresent()) {
+                systemProperty 'duosight.guideSmoke', 'true'
             }
             if (providers.gradleProperty('containerSmoke').isPresent()) {
                 systemProperty 'duosight.containerSmoke', 'true'

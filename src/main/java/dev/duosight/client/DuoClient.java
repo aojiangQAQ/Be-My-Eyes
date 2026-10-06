@@ -7,6 +7,7 @@ import dev.duosight.mixin.MouseHandlerAccess;
 import dev.duosight.mixin.MenuAccess;
 import dev.duosight.mixin.HorseMenuAccess;
 import dev.duosight.net.Packets;
+import dev.duosight.server.GuideBook;
 import net.minecraft.client.CameraType;
 import net.minecraft.client.Camera;
 import net.minecraft.client.KeyMapping;
@@ -80,6 +81,7 @@ public final class DuoClient {
     private static long poseReceived, lastMouseSend, lastPoseSend;
     private static int poseSequence, readyEpoch = -1;
     private static int lastTimer = -1;
+    private static int guideHintTicks;
     private static Packets.Cursor lastCursor;
     private static Packets.Cursor latestCursor;
     private static final long FRAME_INTERVAL = 16_666_667L;
@@ -133,7 +135,8 @@ public final class DuoClient {
             return;
         }
         Minecraft mc = Minecraft.getInstance();
-        if ((next instanceof PauseScreen || next instanceof ChatScreen) && !personalMenu) {
+        if ((next instanceof PauseScreen || next instanceof ChatScreen || next instanceof GuideScreen)
+                && !personalMenu) {
             savedScreen = mc.screen instanceof AbstractContainerScreen<?> ? mc.screen : null;
             savedContainerView = savedScreen instanceof ContainerView container ? container.duosight$capture() : null;
             if (state.body() && savedScreen != null && loaded()) {
@@ -166,6 +169,9 @@ public final class DuoClient {
         Minecraft mc = Minecraft.getInstance();
         boolean beginning = next.active() && !state.active();
         if (beginning) {
+            guideHintTicks = 200;
+            mc.gui.getChat().addMessage(Component.translatable("duosight.book.shortcut",
+                    Component.keybind("key.duosight.guide")));
             previousCamera = mc.options.getCameraType();
             previousPause = mc.options.pauseOnLostFocus;
             if (!next.body() && mc.player != null) {
@@ -176,13 +182,18 @@ public final class DuoClient {
                 previousRecipes.copyOverData(mc.player.getRecipeBook());
                 previousInventory = new ItemStack[mc.player.getInventory().getContainerSize()];
                 for (int i = 0; i < previousInventory.length; i++) {
-                    previousInventory[i] = mc.player.getInventory().getItem(i).copy();
+                    ItemStack item = mc.player.getInventory().getItem(i);
+                    previousInventory[i] = item.is(GuideBook.ITEM.get()) ? ItemStack.EMPTY : item.copy();
                 }
             }
         }
         boolean transition = state.active() != next.active() || state.driver() != next.driver()
                 || state.epoch() != next.epoch() || state.suspended() != next.suspended();
         boolean travel = next.travelling() && (!state.travelling() || state.epoch() != next.epoch());
+        boolean refreshBook = !next.travelling() && mc.screen instanceof GuideScreen
+                && (state.active() != next.active() || state.travelling() != next.travelling()
+                || state.driver() != next.driver() || state.seconds() != next.seconds()
+                || state.epoch() != next.epoch());
         state = next;
         if (transition) {
             resetInput();
@@ -206,7 +217,8 @@ public final class DuoClient {
             }
             remoteMenu = false;
         }
-        if (beginning && (mc.screen instanceof ChatScreen || mc.screen instanceof PauseScreen)) {
+        if (beginning && (mc.screen instanceof ChatScreen || mc.screen instanceof PauseScreen
+                || mc.screen instanceof GuideScreen)) {
             screenChange(mc.screen);
         }
         if (next.active()) {
@@ -226,6 +238,9 @@ public final class DuoClient {
             clear(mc);
         }
         lastTimer = next.seconds();
+        if (refreshBook && mc.getConnection() != null) {
+            GuideClient.refresh();
+        }
     }
 
     private static void resetInput() {
@@ -270,7 +285,7 @@ public final class DuoClient {
             }
             if (remoteMenu) {
                 mc.player.containerMenu = mc.player.inventoryMenu;
-                if (!(mc.screen instanceof ChatScreen)) {
+                if (!(mc.screen instanceof ChatScreen) && !(mc.screen instanceof GuideScreen)) {
                     mc.setScreen(null);
                 }
             }
@@ -284,6 +299,7 @@ public final class DuoClient {
         menuKind = "";
         lastView = null;
         personalMenu = resumeScreen = false;
+        guideHintTicks = 0;
         savedScreen = null;
         savedContainerView = null;
         latestView = null;
@@ -295,6 +311,7 @@ public final class DuoClient {
 
     @SubscribeEvent
     public static void disconnect(ClientPlayerNetworkEvent.LoggingOut event) {
+        GuideClient.reset();
         if (active()) {
             state(inactive());
         }
@@ -320,10 +337,17 @@ public final class DuoClient {
     }
 
     public static boolean key(int key, int scan, int action, int modifiers) {
-        if (injecting || !active()) {
+        if (injecting) {
             return false;
         }
         Minecraft mc = Minecraft.getInstance();
+        if ((key >= GLFW.GLFW_KEY_F1 && key <= GLFW.GLFW_KEY_F25 || !editingText(mc.screen))
+                && GuideClient.key(key, scan, action)) {
+            return true;
+        }
+        if (!active()) {
+            return false;
+        }
         if (key == GLFW.GLFW_KEY_F8) {
             if (action == GLFW.GLFW_PRESS) {
                 Packets.server(new Packets.Stop());
@@ -409,6 +433,15 @@ public final class DuoClient {
             return false;
         }
         if (blocked()) {
+            return true;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT && mc.screen == null && mc.player != null
+                && (mc.player.getMainHandItem().is(GuideBook.ITEM.get())
+                || mc.player.getOffhandItem().is(GuideBook.ITEM.get()))) {
+            if (action == GLFW.GLFW_PRESS) {
+                GuideClient.open();
+            }
             return true;
         }
         if (driver() && !state.body()) {
@@ -608,6 +641,7 @@ public final class DuoClient {
 
     @SubscribeEvent
     public static void tick(TickEvent.ClientTickEvent.Post event) {
+        GuideClient.tick();
         if (!active()) {
             return;
         }
@@ -618,6 +652,9 @@ public final class DuoClient {
         }
         if (mc.player == null || mc.level == null) {
             return;
+        }
+        if (!personalMenu && !state.travelling() && loaded() && guideHintTicks > 0) {
+            guideHintTicks--;
         }
         mc.options.setCameraType(CameraType.FIRST_PERSON);
         if (mc.screen != null && !personalMenu) {
@@ -704,6 +741,23 @@ public final class DuoClient {
 
     private static ItemStack load(Minecraft mc, CompoundTag item) {
         return item.isEmpty() ? ItemStack.EMPTY : ItemStack.parseOptional(mc.level.registryAccess(), item);
+    }
+
+    public static void book(Packets.Book packet) {
+        GuideClient.received();
+        Minecraft mc = Minecraft.getInstance();
+        if (packet.refresh() && !(mc.screen instanceof GuideScreen)) {
+            return;
+        }
+        if (mc.player != null && mc.level != null) {
+            var pages = packet.pages().stream().<Component>map(page ->
+                    Component.Serializer.fromJson(page, mc.level.registryAccess())).toList();
+            if (mc.screen instanceof GuideScreen screen) {
+                screen.setBookAccess(new net.minecraft.client.gui.screens.inventory.BookViewScreen.BookAccess(pages));
+            } else {
+                mc.setScreen(new GuideScreen(pages));
+            }
+        }
     }
 
     public static void view(Packets.View packet) {
@@ -862,6 +916,10 @@ public final class DuoClient {
         graphics.pose().pushPose();
         graphics.pose().translate(0, 0, 1000);
         graphics.drawCenteredString(mc.font, role + "  " + timer, width / 2, 8, 0xFFFFFF);
+        if (guideHintTicks > 0 && mc.screen == null && loaded()) {
+            graphics.drawCenteredString(mc.font, Component.translatable("duosight.book.shortcut_hint",
+                    Component.keybind("key.duosight.guide")), width / 2, 23, 0xFFFFFF);
+        }
         graphics.flush();
         graphics.pose().popPose();
         RenderSystem.enableDepthTest();

@@ -5,6 +5,7 @@
 /.vscode/
 /out/
 /crash-reports/
+/logs/
 *.iml
 *.log
 *.class

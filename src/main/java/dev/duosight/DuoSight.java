@@ -1,6 +1,7 @@
 package dev.duosight;
 
 import dev.duosight.net.Packets;
+import dev.duosight.server.GuideBook;
 import dev.duosight.server.Sessions;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.common.Mod;
@@ -12,6 +13,7 @@ public final class DuoSight {
     public static final String ID = "duosight";
 
     public DuoSight(FMLJavaModLoadingContext context) {
+        GuideBook.ITEMS.register(context.getModEventBus());
         context.registerConfig(ModConfig.Type.SERVER, DuoConfig.SPEC);
         Packets.register();
         MinecraftForge.EVENT_BUS.register(new Sessions());

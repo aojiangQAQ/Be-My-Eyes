@@ -3,6 +3,10 @@ package dev.duosight.server;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import dev.duosight.DuoConfig;
+import dev.duosight.core.ActionCooldown;
+import dev.duosight.core.GuideAction;
+import dev.duosight.core.GuidePages;
+import dev.duosight.core.PairingOptions;
 import dev.duosight.core.SwapClock;
 import dev.duosight.core.TravelGate;
 import dev.duosight.core.RelayPolicy;
@@ -14,6 +18,8 @@ import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.ChatFormatting;
 import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.game.ClientboundSetExperiencePacket;
 import net.minecraft.resources.ResourceKey;
@@ -34,6 +40,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -45,6 +52,9 @@ public final class Sessions {
     private static final Map<UUID, Session> MEMBERS = new HashMap<>();
     private static final Map<UUID, Invite> INVITES = new HashMap<>();
     private static final Map<Connection, Route> ROUTES = new ConcurrentHashMap<>();
+    private static final Map<UUID, ActionCooldown> BOOK_REQUESTS = new HashMap<>();
+    private static final Map<UUID, ActionCooldown> BOOK_ACTIONS = new HashMap<>();
+    private static final Set<UUID> BOOK_REFRESHES = new HashSet<>();
 
     @SubscribeEvent
     public void commands(RegisterCommandsEvent event) {
@@ -59,9 +69,16 @@ public final class Sessions {
                                 return 0;
                             }
                             long deadline = body.getServer().getTickCount() + DuoConfig.INVITE_SECONDS.get() * 20L;
-                            INVITES.put(guest.getUUID(), new Invite(body.getUUID(), deadline));
+                            PairingOptions options = GuideBook.options(body);
+                            INVITES.put(guest.getUUID(), new Invite(body.getUUID(), deadline, options));
                             body.sendSystemMessage(Component.translatable("duosight.invited", guest.getName()));
-                            guest.sendSystemMessage(Component.translatable("duosight.invitation", body.getName()));
+                            guest.sendSystemMessage(Component.translatable("duosight.invitation", body.getName(),
+                                    Component.translatable(options.driver() ? "duosight.observer" : "duosight.driver"),
+                                    options.seconds()).append(" ").append(
+                                    Component.translatable("duosight.book.accept").withStyle(style ->
+                                            style.withColor(ChatFormatting.GREEN).withUnderlined(true)
+                                                    .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND,
+                                                            "/bemyeyes accept")))));
                             return Command.SINGLE_SUCCESS;
                         })))
                 .then(Commands.literal("accept").executes(context -> {
@@ -73,8 +90,32 @@ public final class Sessions {
                         guest.sendSystemMessage(Component.translatable("duosight.no_invite"));
                         return 0;
                     }
-                    return start(body, guest) ? Command.SINGLE_SUCCESS : 0;
+                    return start(body, guest, invite.options) ? Command.SINGLE_SUCCESS : 0;
                 }))
+                .then(Commands.literal("decline").executes(context -> {
+                    var player = context.getSource().getPlayerOrException();
+                    if (INVITES.remove(player.getUUID()) == null) {
+                        player.sendSystemMessage(Component.translatable("duosight.no_invite"));
+                        return 0;
+                    }
+                    player.sendSystemMessage(Component.translatable("duosight.book.declined"));
+                    return Command.SINGLE_SUCCESS;
+                }))
+                .then(Commands.literal("book").executes(context ->
+                        book(context.getSource().getPlayerOrException()))
+                        .then(Commands.literal("give").executes(context -> {
+                            var player = context.getSource().getPlayerOrException();
+                            if (MEMBERS.containsKey(player.getUUID())) {
+                                player.sendSystemMessage(Component.translatable("duosight.book.give_active"));
+                                return 0;
+                            }
+                            return GuideBook.give(player);
+                        })))
+                .then(Commands.literal("role")
+                        .then(Commands.literal("driver").executes(context ->
+                                role(context.getSource().getPlayerOrException(), true)))
+                        .then(Commands.literal("eyes").executes(context ->
+                                role(context.getSource().getPlayerOrException(), false))))
                 .then(Commands.literal("stop").executes(context -> {
                     stop(context.getSource().getPlayerOrException(), "duosight.stopped");
                     return Command.SINGLE_SUCCESS;
@@ -82,7 +123,11 @@ public final class Sessions {
                 .then(Commands.literal("interval")
                         .then(Commands.argument("seconds", IntegerArgumentType.integer(15, 3600))
                                 .executes(context -> interval(context.getSource().getPlayerOrException(),
-                                        IntegerArgumentType.getInteger(context, "seconds")))))
+                                        IntegerArgumentType.getInteger(context, "seconds"))))
+                        .then(Commands.literal("add")
+                                .then(Commands.argument("seconds", IntegerArgumentType.integer(-3600, 3600))
+                                        .executes(context -> adjust(context.getSource().getPlayerOrException(),
+                                                IntegerArgumentType.getInteger(context, "seconds"), true)))))
                 .then(Commands.literal("swap").executes(context ->
                         swap(context.getSource().getPlayerOrException())))
                 .then(Commands.literal("status").executes(context -> {
@@ -97,18 +142,119 @@ public final class Sessions {
         event.getDispatcher().register(Commands.literal("duosight").redirect(root));
     }
 
+    public static int book(ServerPlayer player) {
+        return book(player, false);
+    }
+
+    public static int book(ServerPlayer player, boolean refresh) {
+        if (player == null || player.hasDisconnected()) {
+            return 0;
+        }
+        if (!BOOK_REQUESTS.computeIfAbsent(player.getUUID(), id -> new ActionCooldown(5))
+                .allow(player.getServer().getTickCount())) {
+            if (refresh) {
+                BOOK_REFRESHES.add(player.getUUID());
+            }
+            return 0;
+        }
+        BOOK_REFRESHES.remove(player.getUUID());
+        return sendBook(player, refresh);
+    }
+
+    public static void bookAction(ServerPlayer player, GuideAction action) {
+        if (player == null || player.hasDisconnected() || action == null || !action.valid()) {
+            return;
+        }
+        if (!BOOK_ACTIONS.computeIfAbsent(player.getUUID(), id -> new ActionCooldown(5))
+                .allow(player.getServer().getTickCount())) {
+            BOOK_REFRESHES.add(player.getUUID());
+            return;
+        }
+        switch (action.kind()) {
+            case INTERVAL -> interval(player, action.value(), false);
+            case ADJUST -> adjust(player, action.value(), false);
+            case REFRESH -> {}
+            default -> player.getServer().getCommands().performPrefixedCommand(
+                    player.createCommandSourceStack(), action.command());
+        }
+        BOOK_REFRESHES.remove(player.getUUID());
+        BOOK_REQUESTS.computeIfAbsent(player.getUUID(), id -> new ActionCooldown(5))
+                .allow(player.getServer().getTickCount());
+        if (!action.closes()) {
+            sendBook(player, true);
+        }
+    }
+
+    private static int sendBook(ServerPlayer player, boolean refresh) {
+        Session session = MEMBERS.get(player.getUUID());
+        if (session != null && (session.travel.waiting() || session.endPending)) {
+            if (!refresh) {
+                player.sendSystemMessage(Component.translatable("duosight.swap_loading"));
+            }
+            return 0;
+        }
+        GuidePages.Shared shared = session == null ? null : new GuidePages.Shared(
+                (player == session.body ? session.guest : session.body).getGameProfile().getName(),
+                (player == session.body) == session.clock.bodyControls(),
+                session.clock.intervalSeconds(), session.clock.seconds());
+        Invite invite = INVITES.get(player.getUUID());
+        ServerPlayer inviter = invite == null || invite.deadline < player.getServer().getTickCount()
+                ? null : player.getServer().getPlayerList().getPlayer(invite.body);
+        GuidePages.Invitation invitation = inviter == null ? null : new GuidePages.Invitation(
+                inviter.getGameProfile().getName(), invite.options.driver(), invite.options.seconds());
+        var players = player.getServer().getPlayerList().getPlayers().stream()
+                .filter(other -> other != player && !MEMBERS.containsKey(other.getUUID())
+                        && other.serverLevel() == player.serverLevel() && other.distanceToSqr(player) <= 32 * 32
+                        && other.gameMode.getGameModeForPlayer() == GameType.SURVIVAL
+                        && !other.isPassenger() && !other.isDeadOrDying())
+                .map(other -> other.getGameProfile().getName()).sorted(String.CASE_INSENSITIVE_ORDER)
+                .limit(128).toList();
+        var pages = GuidePages.create(GuideBook.options(player), shared, invitation, players,
+                !GuideBook.played(player));
+        Packets.send(player, new Packets.Book(refresh, pages.stream()
+                .map(page -> Component.Serializer.toJson(page, player.registryAccess())).toList()));
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static int role(ServerPlayer player, boolean driver) {
+        if (MEMBERS.containsKey(player.getUUID())) {
+            player.sendSystemMessage(Component.translatable("duosight.book.role_active"));
+            return 0;
+        }
+        GuideBook.options(player, new PairingOptions(driver, GuideBook.options(player).seconds()));
+        player.sendSystemMessage(Component.translatable("duosight.book.role_set",
+                Component.translatable(driver ? "duosight.driver" : "duosight.observer")));
+        return Command.SINGLE_SUCCESS;
+    }
+
     private static int interval(ServerPlayer player, int seconds) {
+        return interval(player, seconds, true);
+    }
+
+    private static int interval(ServerPlayer player, int seconds, boolean announce) {
         Session session = MEMBERS.get(player.getUUID());
         if (session == null) {
-            player.sendSystemMessage(Component.translatable("duosight.inactive"));
-            return 0;
+            GuideBook.options(player, new PairingOptions(GuideBook.options(player).driver(), seconds));
+            if (announce) {
+                player.sendSystemMessage(Component.translatable("duosight.book.interval_set", seconds));
+            }
+            return Command.SINGLE_SUCCESS;
         }
         session.clock.setInterval(seconds);
         sync(session, false);
-        Component message = Component.translatable("duosight.interval_set", seconds);
-        session.body.sendSystemMessage(message);
-        session.guest.sendSystemMessage(message);
+        if (announce) {
+            Component message = Component.translatable("duosight.interval_set", seconds);
+            session.body.sendSystemMessage(message);
+            session.guest.sendSystemMessage(message);
+        }
         return Command.SINGLE_SUCCESS;
+    }
+
+    private static int adjust(ServerPlayer player, int delta, boolean announce) {
+        Session session = MEMBERS.get(player.getUUID());
+        int current = session == null ? GuideBook.options(player).seconds() : session.clock.intervalSeconds();
+        int seconds = new PairingOptions(true, current).adjust(delta).seconds();
+        return current == seconds ? Command.SINGLE_SUCCESS : interval(player, seconds, announce);
     }
 
     private static int swap(ServerPlayer player) {
@@ -130,7 +276,7 @@ public final class Sessions {
         return Command.SINGLE_SUCCESS;
     }
 
-    private static boolean start(ServerPlayer body, ServerPlayer guest) {
+    private static boolean start(ServerPlayer body, ServerPlayer guest, PairingOptions options) {
         if (MEMBERS.containsKey(body.getUUID()) || MEMBERS.containsKey(guest.getUUID())
                 || body.serverLevel() != guest.serverLevel() || body.distanceToSqr(guest) > 32 * 32
                 || body.gameMode.getGameModeForPlayer() != GameType.SURVIVAL
@@ -139,8 +285,13 @@ public final class Sessions {
             guest.sendSystemMessage(Component.translatable("duosight.start_conditions"));
             return false;
         }
+        GuideBook.consume(body);
+        GuideBook.consume(guest);
         body.closeContainer();
         guest.closeContainer();
+        GuideBook.remove(body);
+        GuideBook.remove(guest);
+        ((PlayerListAccess) body.getServer().getPlayerList()).duosight$save(body);
         CompoundTag restore = new CompoundTag();
         restore.putString("dimension", guest.serverLevel().dimension().location().toString());
         restore.putDouble("x", guest.getX());
@@ -151,13 +302,16 @@ public final class Sessions {
         restore.putInt("mode", guest.gameMode.getGameModeForPlayer().getId());
         guest.getPersistentData().put(RESTORE, restore);
         ((PlayerListAccess) guest.getServer().getPlayerList()).duosight$save(guest);
-        Session session = new Session(body, guest);
+        Session session = new Session(body, guest, options);
         MEMBERS.put(body.getUUID(), session);
         MEMBERS.put(guest.getUUID(), session);
+        INVITES.entrySet().removeIf(entry -> entry.getKey().equals(body.getUUID())
+                || entry.getKey().equals(guest.getUUID()) || entry.getValue().body.equals(body.getUUID())
+                || entry.getValue().body.equals(guest.getUUID()));
         guest.setGameMode(GameType.SPECTATOR);
         beginTravel(session);
-        body.sendSystemMessage(Component.translatable("duosight.started"));
-        guest.sendSystemMessage(Component.translatable("duosight.started"));
+        body.sendSystemMessage(Component.translatable("duosight.started", options.seconds()));
+        guest.sendSystemMessage(Component.translatable("duosight.started", options.seconds()));
         return true;
     }
 
@@ -243,6 +397,16 @@ public final class Sessions {
     @SubscribeEvent
     public void tick(TickEvent.ServerTickEvent.Post event) {
         MinecraftServer server = event.getServer();
+        for (UUID id : Set.copyOf(BOOK_REFRESHES)) {
+            ServerPlayer player = server.getPlayerList().getPlayer(id);
+            if (player == null) {
+                BOOK_REFRESHES.remove(id);
+            } else if (BOOK_REQUESTS.computeIfAbsent(id, key -> new ActionCooldown(5))
+                    .allow(server.getTickCount())) {
+                BOOK_REFRESHES.remove(id);
+                sendBook(player, true);
+            }
+        }
         for (Session session : new ArrayList<>(Set.copyOf(MEMBERS.values()))) {
             session.viewsThisTick = 0;
             if (session.body.hasDisconnected() || session.guest.hasDisconnected()
@@ -420,6 +584,11 @@ public final class Sessions {
     public void logout(PlayerEvent.PlayerLoggedOutEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             stop(player, "duosight.disconnected");
+            INVITES.entrySet().removeIf(entry -> entry.getKey().equals(player.getUUID())
+                    || entry.getValue().body.equals(player.getUUID()));
+            BOOK_REQUESTS.remove(player.getUUID());
+            BOOK_ACTIONS.remove(player.getUUID());
+            BOOK_REFRESHES.remove(player.getUUID());
         }
     }
 
@@ -427,6 +596,7 @@ public final class Sessions {
     public void login(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer player && !MEMBERS.containsKey(player.getUUID())) {
             restore(player);
+            GuideBook.login(player);
         }
     }
 
@@ -445,6 +615,9 @@ public final class Sessions {
         CompoundTag original = event.getOriginal().getPersistentData();
         if (original.contains(RESTORE)) {
             event.getEntity().getPersistentData().put(RESTORE, original.getCompound(RESTORE).copy());
+        }
+        if (original.contains(GuideBook.DATA)) {
+            event.getEntity().getPersistentData().put(GuideBook.DATA, original.getCompound(GuideBook.DATA).copy());
         }
     }
 
@@ -477,16 +650,19 @@ public final class Sessions {
         }
         INVITES.clear();
         ROUTES.clear();
+        BOOK_REQUESTS.clear();
+        BOOK_ACTIONS.clear();
+        BOOK_REFRESHES.clear();
     }
 
-    private record Invite(UUID body, long deadline) {}
+    private record Invite(UUID body, long deadline, PairingOptions options) {}
     private record Route(RelayPolicy policy, Connection recipient, Vec3 position, int menuId,
                          AtomicInteger inputs, AtomicInteger visuals) {}
 
     private static final class Session {
         ServerPlayer body;
         ServerPlayer guest;
-        final SwapClock clock = new SwapClock(DuoConfig.SWAP_SECONDS.get());
+        final SwapClock clock;
         final TravelGate travel = new TravelGate();
         final SharedMaps maps = new SharedMaps();
         String dimension;
@@ -495,9 +671,10 @@ public final class Sessions {
         CompoundTag screen = new CompoundTag();
         CompoundTag previousView;
 
-        Session(ServerPlayer body, ServerPlayer guest) {
+        Session(ServerPlayer body, ServerPlayer guest, PairingOptions options) {
             this.body = body;
             this.guest = guest;
+            this.clock = new SwapClock(options.seconds(), options.driver());
         }
 
         boolean suspended() {

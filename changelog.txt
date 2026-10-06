@@ -1,6 +1,23 @@
-Be My Eyes 0.1.4
+Be My Eyes 0.1.6
 Author: aojiangQAQ（鳌江）
 
+- Remove both players' physical guide books on their first session start; do not reissue them afterward.
+- Clear guide books from crafting grids and returned container inputs without removing other materials.
+- Add a custom interval page with 1-, 10- and 60-second increments and decrements.
+- Keep the current page during updates and apply simultaneous adjustments cumulatively.
+- Use validated settings packets instead of native chat commands for book actions.
+- Rate-limit settings actions and opening requests on both clients and the server; coalesce refreshes.
+
+0.1.5
+- Grant each player a control book on their first world login.
+- Add a rebindable F9 shortcut that opens settings for either role without a book item.
+- Announce the player's current shortcut in chat and briefly below the countdown on session start.
+- Add clickable role, interval, invitation, immediate swap and stop controls.
+- Preserve shared containers and keep the driver's world hidden behind the control book.
+- Save initial preferences per player and snapshot them when sending an invitation.
+- Add book replacement and invitation decline commands.
+
+0.1.4
 - Rename the mod to Be My Eyes and add /bemyeyes.
 - Keep /duosight and existing save/config identifiers compatible.
 - Synchronize shared experience and container-specific screen state.

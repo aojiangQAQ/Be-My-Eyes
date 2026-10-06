@@ -66,6 +66,7 @@ public final class NetworkSmoke {
     private static final boolean HOST = ROLE.equals("host");
     private static final boolean CURSOR_SMOKE = Boolean.getBoolean("duosight.cursorSmoke");
     private static final boolean COMMAND_SMOKE = Boolean.getBoolean("duosight.commandSmoke");
+    private static final boolean GUIDE_SMOKE = Boolean.getBoolean("duosight.guideSmoke");
     private static final boolean CONTAINER_SMOKE = Boolean.getBoolean("duosight.containerSmoke");
     private static final Set<UUID> ACKS = new HashSet<>();
     private static int serverStage, serverWait, frozenSeconds, frozenEpoch;
@@ -78,6 +79,7 @@ public final class NetworkSmoke {
     private static boolean sized;
     private static boolean languageChecked;
     private static boolean initialChatOpened, initialChatReopened, initialChatClosed;
+    private static boolean guideHintChecked;
 
     @SubscribeEvent
     public static void commands(RegisterCommandsEvent event) {
@@ -113,6 +115,7 @@ public final class NetworkSmoke {
             sized = false;
             ContainerSmoke.reset();
             ChatSmoke.reset();
+            GuideSmoke.reset();
             event.setCanceled(true);
         }
     }
@@ -186,6 +189,12 @@ public final class NetworkSmoke {
         }
         if (clientStage == 17) {
             if (!state.active() && clientTicks > 10) {
+                if (GUIDE_SMOKE) {
+                    check(java.util.stream.IntStream.range(0, mc.player.getInventory().getContainerSize())
+                            .noneMatch(slot -> mc.player.getInventory().getItem(slot)
+                                    .is(dev.duosight.server.GuideBook.ITEM.get())),
+                            "consumed books are not restored on either client after stopping");
+                }
                 check(mc.player.isSpectator() == false, "normal player mode restored");
                 check(!DuoClient.key(GLFW.GLFW_KEY_W, 0, GLFW.GLFW_PRESS, 0), "normal input restored");
                 if (!HOST) {
@@ -208,8 +217,19 @@ public final class NetworkSmoke {
             ack(mc);
             return;
         }
+        if (GUIDE_SMOKE && clientStage >= 70 && clientStage <= 88) {
+            if (GuideSmoke.client(mc, state, clientStage, clientTicks, HOST)) {
+                ack(mc);
+            }
+            return;
+        }
         if (!state.active()) {
             return;
+        }
+        if (GUIDE_SMOKE && clientStage == 1 && !guideHintChecked && !state.travelling()) {
+            GuideSmoke.shortcut(mc, GLFW.GLFW_KEY_F10, 2);
+            GuideSmoke.bind(GLFW.GLFW_KEY_F9);
+            guideHintChecked = true;
         }
         if (HOST && clientStage == 1 && initialChatOpened && !initialChatClosed) {
             if (clientTicks > 12 && mc.screen == null && !state.travelling() && !initialChatReopened) {
@@ -387,6 +407,9 @@ public final class NetworkSmoke {
             body.setInvulnerable(true);
             guest.setInvulnerable(true);
             guest.teleportTo(body.serverLevel(), body.getX() + 2, body.getY(), body.getZ(), Set.of(), 0, 0);
+            if (GUIDE_SMOKE) {
+                GuideSmoke.prepare(body, guest);
+            }
             guest.getInventory().setItem(0, new ItemStack(Items.DIAMOND, 7));
             if (CONTAINER_SMOKE) {
                 guest.setExperienceLevels(7);
@@ -394,6 +417,10 @@ public final class NetworkSmoke {
             guest.inventoryMenu.sendAllDataToRemote();
             originalGuestItems = guest.getInventory().getItem(0).getCount();
             DuoConfig.SWAP_SECONDS.set(120);
+            if (GUIDE_SMOKE) {
+                stage(server, 70);
+                return;
+            }
             server.getCommands().performPrefixedCommand(body.createCommandSourceStack(), "bemyeyes invite DuoGuest");
             server.getCommands().performPrefixedCommand(guest.createCommandSourceStack(), "bemyeyes accept");
             stage(server, 1);
@@ -403,6 +430,25 @@ public final class NetworkSmoke {
             ContainerSmoke.server(body, guest, serverStage, serverWait++);
         }
         if (ACKS.size() < 2) {
+            return;
+        }
+        if (GUIDE_SMOKE && serverStage >= 70 && serverStage <= 88) {
+            GuideSmoke.server(body, guest, serverStage);
+            if (serverStage == 82) {
+                server.getCommands().performPrefixedCommand(body.createCommandSourceStack(), "bemyeyes stop");
+                server.getCommands().performPrefixedCommand(body.createCommandSourceStack(), "bemyeyes role driver");
+                server.getCommands().performPrefixedCommand(body.createCommandSourceStack(), "bemyeyes interval 120");
+                server.getCommands().performPrefixedCommand(body.createCommandSourceStack(), "bemyeyes invite DuoGuest");
+                server.getCommands().performPrefixedCommand(guest.createCommandSourceStack(), "bemyeyes accept");
+                System.out.println("BE_MY_EYES_GUIDE_SMOKE_PASS: server");
+                stage(server, 1);
+            } else if (serverStage == 75) {
+                stage(server, 83);
+            } else if (serverStage == 88) {
+                stage(server, 76);
+            } else {
+                stage(server, serverStage + 1);
+            }
             return;
         }
         if (COMMAND_SMOKE && serverStage >= 50 && serverStage <= 64) {
@@ -608,6 +654,9 @@ public final class NetworkSmoke {
             stage(server, 16);
             return;
         } else if (serverStage == 17) {
+            if (GUIDE_SMOKE) {
+                GuideSmoke.restored(body, guest);
+            }
             check(guest.gameMode.getGameModeForPlayer() == GameType.SURVIVAL, "guest restored after dimensions");
             check(guest.getInventory().getItem(0).is(Items.DIAMOND)
                     && guest.getInventory().getItem(0).getCount() == originalGuestItems, "guest inventory retained");
@@ -616,8 +665,8 @@ public final class NetworkSmoke {
                         guest.createCommandSourceStack().withPermission(0)) == 0,
                         "swap rejected outside a session");
                 check(server.getCommands().getDispatcher().execute("duosight interval 60",
-                        body.createCommandSourceStack().withPermission(0)) == 0,
-                        "interval rejected outside a session");
+                        body.createCommandSourceStack().withPermission(0)) == 1,
+                        "interval stored for the next invitation outside a session");
             }
             stage(server, 99);
             return;

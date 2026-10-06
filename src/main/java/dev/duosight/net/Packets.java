@@ -2,6 +2,7 @@ package dev.duosight.net;
 
 import dev.duosight.DuoSight;
 import dev.duosight.client.DuoClient;
+import dev.duosight.core.GuideAction;
 import dev.duosight.server.Sessions;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
@@ -16,7 +17,7 @@ import net.minecraftforge.network.SimpleChannel;
 public final class Packets {
     public static final SimpleChannel CHANNEL = ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(DuoSight.ID, "play"))
-            .networkProtocolVersion(3).simpleChannel();
+            .networkProtocolVersion(5).simpleChannel();
 
     public static void register() {
         CHANNEL.messageBuilder(State.class, NetworkDirection.PLAY_TO_CLIENT)
@@ -71,6 +72,21 @@ public final class Packets {
                 .encoder((packet, buffer) -> packet.cursor.write(buffer))
                 .decoder(buffer -> new ForwardedCursor(Cursor.read(buffer)))
                 .consumerMainThread((packet, context) -> DuoClient.cursor(packet.cursor)).add();
+        CHANNEL.messageBuilder(Book.class, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder((packet, buffer) -> {
+                    buffer.writeBoolean(packet.refresh);
+                    buffer.writeCollection(packet.pages, (output, page) -> output.writeUtf(page, 16384));
+                })
+                .decoder(buffer -> new Book(buffer.readBoolean(),
+                        buffer.readList(input -> input.readUtf(16384))))
+                .consumerMainThread((packet, context) -> DuoClient.book(packet)).add();
+        CHANNEL.messageBuilder(OpenBook.class, NetworkDirection.PLAY_TO_SERVER)
+                .encoder((packet, buffer) -> buffer.writeBoolean(packet.refresh))
+                .decoder(buffer -> new OpenBook(buffer.readBoolean()))
+                .consumerMainThread((packet, context) -> Sessions.book(context.getSender(), packet.refresh)).add();
+        CHANNEL.messageBuilder(BookAction.class, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(BookAction::write).decoder(BookAction::read)
+                .consumerMainThread((packet, context) -> Sessions.bookAction(context.getSender(), packet.action)).add();
         CHANNEL.build();
     }
 
@@ -187,6 +203,18 @@ public final class Packets {
     }
 
     public record ForwardedCursor(Cursor cursor) {}
+    public record Book(boolean refresh, java.util.List<String> pages) {}
+    public record OpenBook(boolean refresh) {}
+    public record BookAction(GuideAction action) {
+        public void write(FriendlyByteBuf buffer) {
+            buffer.writeEnum(action.kind()).writeVarInt(action.value()).writeUtf(action.player(), 16);
+        }
+
+        static BookAction read(FriendlyByteBuf buffer) {
+            return new BookAction(new GuideAction(buffer.readEnum(GuideAction.Kind.class),
+                    buffer.readVarInt(), buffer.readUtf(16)));
+        }
+    }
 
     private Packets() {}
 }

@@ -13,6 +13,21 @@ class SwapClockTest {
     }
 
     @Test
+    void canBeginWithGuestInControlWithoutAnArtificialSwap() {
+        var clock = new SwapClock(30, false);
+        assertFalse(clock.bodyControls());
+        assertEquals(30, clock.intervalSeconds());
+        assertEquals(30, clock.seconds());
+        assertEquals(0, clock.epoch());
+        for (int i = 0; i < 599; i++) {
+            assertFalse(clock.tick());
+        }
+        assertTrue(clock.tick());
+        assertTrue(clock.bodyControls());
+        assertEquals(30, clock.seconds());
+    }
+
+    @Test
     void swapsExactlyAtTheDeadline() {
         var clock = new SwapClock(120);
         for (int i = 0; i < 2399; i++) {

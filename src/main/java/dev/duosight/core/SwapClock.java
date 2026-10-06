@@ -7,7 +7,12 @@ public final class SwapClock {
     private boolean bodyControls = true;
 
     public SwapClock(int intervalSeconds) {
+        this(intervalSeconds, true);
+    }
+
+    public SwapClock(int intervalSeconds, boolean bodyControls) {
         setInterval(intervalSeconds);
+        this.bodyControls = bodyControls;
     }
 
     public void setInterval(int intervalSeconds) {
